@@ -200,60 +200,73 @@ class LocalClient:
             return silent_chunks + 1
 
     def _record_audio_powershell(self, output_path: str) -> bool:
-        """使用 PowerShell + ffmpeg 录制音频（WSL 备用方案）"""
+        """使用 ffmpeg 录制音频（WSL 备用方案）"""
         result = subprocess.run(
             ["wslpath", "-w", output_path],
-            capture_output=True, text=True
+            capture_output=True
         )
-        win_path = result.stdout.strip()
+        win_path = result.stdout.decode("utf-8", errors="replace").strip()
 
-        # 使用 ffmpeg Windows 版本录音（dshow 设备）
-        result = subprocess.run(
-            ["where.exe", "ffmpeg.exe"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode != 0:
-            # ffmpeg 不存在，尝试在线安装提示
-            print("❌ 语音模式需要 ffmpeg（Windows 端）")
-            print("   安装方法：在 Windows PowerShell 中运行：")
-            print("   winget install ffmpeg")
-            print("   或从 https://ffmpeg.org/download.html 下载")
+        ffmpeg_path = self._find_ffmpeg()
+        if not ffmpeg_path:
+            print("❌ 未找到 ffmpeg，请安装后重试")
+            print("   安装方法：在 Windows PowerShell 中运行：winget install ffmpeg")
             return False
 
-        ffmpeg_path = result.stdout.strip().split('\n')[0].strip()
+        print("🎤 录音中...（最长10秒）")
 
-        print("🎤 录音中...（最长10秒，说完整版自动停止）")
+        # 获取系统默认录音设备
+        mic_name = self._get_microphone_name(ffmpeg_path)
+        if not mic_name:
+            print("❌ 未找到麦克风设备")
+            return False
 
-        # ffmpeg 录音：dshow 音频设备，10秒自动停止
-        record_cmd = [
-            ffmpeg_path, "-y",
-            "-f", "dshow",
-            "-i", "audio=麦克风阵列",  # 默认中文麦克风名称
-            "-t", "10",
-            "-ar", "16000",
-            "-ac", "1",
-            "-sample_fmt", "s16",
-            win_path
-        ]
-
-        result = subprocess.run(
-            record_cmd,
-            capture_output=True, timeout=15
+        # 使用 PowerShell 执行 ffmpeg（支持 Windows 路径）
+        ps_cmd = (
+            f"& '{ffmpeg_path}' -y -f dshow -i 'audio={mic_name}' "
+            f"-t 10 -ar 16000 -ac 1 -sample_fmt s16 '{win_path}'"
         )
 
-        if result.returncode != 0:
-            # 尝试英文麦克风名称
-            record_cmd[6] = "audio=Microphone"
-            result = subprocess.run(
-                record_cmd,
-                capture_output=True, timeout=15
-            )
+        result = subprocess.run(
+            ["powershell.exe", "-Command", ps_cmd],
+            capture_output=True, timeout=20
+        )
 
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             print("❌ 录音失败，请检查麦克风设备")
+            print(f"   设备名: {mic_name}")
+            stderr = result.stderr.decode("utf-8", errors="replace")[:200]
+            if stderr:
+                print(f"   错误: {stderr}")
             return False
 
         return True
+
+    @staticmethod
+    def _get_microphone_name(ffmpeg_path: str) -> str:
+        """获取系统录音设备名称"""
+        # 使用 PowerShell 执行 ffmpeg 并获取设备列表
+        ps_cmd = f"& '{ffmpeg_path}' -list_devices true -f dshow -i dummy 2>&1"
+        result = subprocess.run(
+            ["powershell.exe", "-Command", ps_cmd],
+            capture_output=True, timeout=15
+        )
+        # 合并 stdout 和 stderr（ffmpeg 输出到 stderr）
+        output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
+
+        import re
+        # 匹配 audio 设备行（支持中英文）
+        matches = re.findall(r'"(.+?)" \(audio\)', output)
+        if matches:
+            # 优先选择非虚拟设备
+            for name in matches:
+                lower = name.lower()
+                if 'virtual' not in lower and 'todect' not in lower:
+                    return name
+            # 否则返回第一个
+            return matches[0]
+
+        return ""
 
     def _play_audio_pyaudio(self, audio_path: str):
         """使用 PyAudio 播放音频"""
@@ -282,14 +295,14 @@ class LocalClient:
         """使用 PowerShell 播放音频（WSL 备用方案）"""
         result = subprocess.run(
             ["wslpath", "-w", audio_path],
-            capture_output=True, text=True
+            capture_output=True
         )
-        win_path = result.stdout.strip()
+        win_path = result.stdout.decode("utf-8", errors="replace").strip()
 
         ps_cmd = f'(New-Object System.Media.SoundPlayer "{win_path}").PlaySync()'
         subprocess.run(
             ["powershell.exe", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=60
+            capture_output=True, timeout=60
         )
 
     def _record_audio(self, output_path: str) -> bool:
@@ -331,16 +344,18 @@ class LocalClient:
 
     def _play_audio_ffmpeg(self, audio_path: str):
         """使用 ffmpeg 播放音频"""
-        result = subprocess.run(
-            ["where.exe", "ffmpeg.exe"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode != 0:
+        ffmpeg_path = self._find_ffmpeg()
+        if not ffmpeg_path:
             return
-        ffmpeg_path = result.stdout.strip().split('\n')[0].strip()
+        result = subprocess.run(
+            ["wslpath", "-w", audio_path],
+            capture_output=True
+        )
+        win_path = result.stdout.decode("utf-8", errors="replace").strip()
+        ps_cmd = f"& '{ffmpeg_path}' -i '{win_path}' -autoexit -nodisp"
         subprocess.run(
-            [ffmpeg_path, "-i", audio_path, "-autoexit", "-nodisp"],
-            timeout=30
+            ["powershell.exe", "-Command", ps_cmd],
+            capture_output=True, timeout=30
         )
 
     async def voice_mode(self):
@@ -455,16 +470,54 @@ class LocalClient:
                 await self.cli_mode()
 
     @staticmethod
-    def _check_ffmpeg() -> bool:
-        """检查 Windows 端是否有 ffmpeg"""
+    def _find_ffmpeg() -> str:
+        """查找 ffmpeg 可执行文件路径"""
+        # 先检查 PATH
         try:
             result = subprocess.run(
                 ["where.exe", "ffmpeg.exe"],
-                capture_output=True, text=True, timeout=5
+                capture_output=True, timeout=5
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return result.stdout.decode("utf-8", errors="replace").strip().split('\n')[0].strip()
         except Exception:
-            return False
+            pass
+
+        # 使用 PowerShell 搜索常见安装路径
+        search_patterns = [
+            r"C:\ffmpeg\bin\ffmpeg.exe",
+            r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+            r"C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe",
+            r"C:\Program Files (x86)\Lenovo\LegionZone\*\SEGamingAI\services\editor\ffmpeg.exe",
+        ]
+        for pattern in search_patterns:
+            result = subprocess.run(
+                ["powershell.exe", "-Command",
+                 f"Get-ChildItem -Path '{pattern}' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName"],
+                capture_output=True, timeout=10
+            )
+            if result.returncode == 0:
+                path = result.stdout.decode("utf-8", errors="replace").strip()
+                if path:
+                    return path
+
+        # 全盘搜索
+        result = subprocess.run(
+            ["powershell.exe", "-Command",
+             "Get-ChildItem -Path 'C:\\' -Filter 'ffmpeg.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName"],
+            capture_output=True, timeout=30
+        )
+        if result.returncode == 0:
+            path = result.stdout.decode("utf-8", errors="replace").strip()
+            if path:
+                return path
+
+        return ""
+
+    @staticmethod
+    def _check_ffmpeg() -> bool:
+        """检查是否有可用的 ffmpeg"""
+        return bool(LocalClient._find_ffmpeg())
 
     async def cleanup(self):
         """清理资源"""

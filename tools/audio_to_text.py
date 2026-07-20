@@ -79,7 +79,7 @@ class AudioToText:
 
 
 if __name__ == "__main__":
-    audio_file = "output.wav"  # 修改为你的音频文件
+    audio_file = "/home/sevnce/project/chat_with_llm_local/models/example/zh.mp3"  # 修改为你的音频文件
     at = AudioToText()
     text = at.transcribe(audio_file)
     print("识别结果：", text)
