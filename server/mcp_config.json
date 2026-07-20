@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "text_editor": {
+      "script_path": "mcp-server/text-editor/mcp-text-editor.py",
+      "type": "python",
+      "args": [],
+      "env": {},
+      "description": "文本编辑器工具，支持读写文件"
+    },
+    "display": {
+      "script_path": "mcp-server/display/mcp-display.py",
+      "type": "python",
+      "args": [],
+      "env": {},
+      "description": "屏幕亮度调节工具"
+    }
+  },
+  "default_servers": ["text_editor", "display"]
+}
