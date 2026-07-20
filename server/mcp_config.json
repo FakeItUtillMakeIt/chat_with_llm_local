@@ -13,7 +13,14 @@
       "args": [],
       "env": {},
       "description": "屏幕亮度调节工具"
+    },
+    "wecom": {
+      "script_path": "mcp-server/wecom/mcp-wecom.py",
+      "type": "python",
+      "args": [],
+      "env": {},
+      "description": "企业微信消息收发工具"
     }
   },
-  "default_servers": ["text_editor", "display"]
+  "default_servers": ["text_editor", "display", "wecom"]
 }

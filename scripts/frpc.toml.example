@@ -1,0 +1,27 @@
+# frp 客户端配置 - 用于企业微信回调内网穿透
+# 需要一台公网 VPS 运行 frp 服务端 (frps)
+
+# 将此文件保存为 frpc.toml 并运行: frpc -c frpc.toml
+
+serverAddr = "你的公网服务器IP"
+serverPort = 7000
+
+# 认证方式
+auth.method = "token"
+auth.token = "你的frp认证token"
+
+# 代理配置
+[[proxies]]
+name = "wecom_callback"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 9800
+remotePort = 9800
+
+# 或者使用 HTTP 代理（推荐，支持域名访问）
+[[proxies]]
+name = "wecom_http"
+type = "http"
+localIP = "127.0.0.1"
+localPort = 9800
+customDomains = ["wecom.yourdomain.com"]
