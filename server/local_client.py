@@ -530,23 +530,14 @@ class LocalClient:
                     try:
                         import tempfile
                         tts_path = os.path.join(tempfile.gettempdir(), f"cli_tts_{int(time.time())}.wav")
-                        print("  🔊 正在合成语音...")
                         await self.tts.text_to_speech(response, tts_path)
-                        print(f"  🔊 语音文件: {os.path.getsize(tts_path)} bytes")
-                        print("  🔊 正在播放...")
                         self._play_audio(tts_path)
-                        print("  🔊 播放完成")
                         try:
                             os.remove(tts_path)
                         except Exception:
                             pass
                     except Exception as e:
-                        error_msg = str(e)
-                        if '503' in error_msg:
-                            print("  ⚠️ 语音合成服务暂时不可用")
-                            print("    请稍后重试")
-                        else:
-                            print(f"  ⚠️ 语音播放失败: {error_msg[:150]}")
+                        print(f"  ⚠️ 语音播放失败: {str(e)[:150]}")
 
             except KeyboardInterrupt:
                 print("\n\n退出命令行模式")
