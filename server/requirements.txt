@@ -4,8 +4,8 @@ pydub>=0.25.1
 openai>=1.0.0
 mcp>=1.17.0
 python-dotenv>=1.1.1
-edge-tts>=7.2.3
 funasr==1.2.3
 torch==2.2.2
 torchaudio==2.2.2
 numpy==1.26.4
+# TTS 使用 Windows SAPI（系统内置，无需额外安装）

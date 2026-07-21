@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import wave
+import time
 import asyncio
 import argparse
 import tempfile
@@ -20,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from llm_mcp import LLM_MCP
 from tools.audio_to_text import AudioToText
-from tools.edgeTTS import EdgeTTS
+from tools.offlineTTS import OfflineTTS
 
 # 尝试导入音频相关库
 try:
@@ -42,7 +43,7 @@ class LocalClient:
     def __init__(self, config_path: str = "mcp_config.json", system_prompt: str = None):
         self.llm_client = LLM_MCP(config_path=config_path, system_prompt=system_prompt)
         self.asr = AudioToText()
-        self.tts = EdgeTTS({"voice": "zh-CN-XiaoxiaoNeural"})
+        self.tts = OfflineTTS({"rate": 0, "volume": 100})
 
         # 音频参数
         self.sample_rate = 16000
@@ -292,18 +293,56 @@ class LocalClient:
         audio.terminate()
 
     def _play_audio_powershell(self, audio_path: str):
-        """使用 PowerShell 播放音频（WSL 备用方案）"""
-        result = subprocess.run(
-            ["wslpath", "-w", audio_path],
-            capture_output=True
-        )
-        win_path = result.stdout.decode("utf-8", errors="replace").strip()
+        """使用 PowerShell SoundPlayer 播放音频"""
+        import shutil
 
-        ps_cmd = f'(New-Object System.Media.SoundPlayer "{win_path}").PlaySync()'
-        subprocess.run(
+        # 1. 确保是真正的 WAV 格式
+        wav_path = self._ensure_wav_format(audio_path)
+
+        # 2. 复制到 Windows Temp 目录
+        win_filename = f"wsl_tts_{int(time.time())}.wav"
+        win_dest = f"/mnt/c/Users/sevnce/AppData/Local/Temp/{win_filename}"
+
+        # 尝试多种路径复制
+        copy_ok = False
+        try:
+            shutil.copy2(wav_path, win_dest)
+            copy_ok = True
+        except Exception:
+            pass
+
+        if not copy_ok:
+            # 尝试通过 wslpath 获取 Windows 路径后复制
+            try:
+                result = subprocess.run(["wslpath", "-w", wav_path], capture_output=True)
+                win_src = result.stdout.decode("utf-8", errors="replace").strip()
+                win_dest2 = f"C:\\Users\\sevnce\\AppData\\Local\\Temp\\{win_filename}"
+                subprocess.run(["cmd.exe", "/c", "copy", win_src, win_dest2], capture_output=True)
+                copy_ok = True
+            except Exception:
+                pass
+
+        if not copy_ok:
+            # 最后尝试直接用原始路径
+            raise RuntimeError("无法复制音频文件到 Windows 目录")
+
+        # 3. 用 PowerShell SoundPlayer 播放
+        win_path = f"C:\\Users\\sevnce\\AppData\\Local\\Temp\\{win_filename}"
+        ps_cmd = f'$player = New-Object System.Media.SoundPlayer "{win_path}"; $player.PlaySync()'
+        result = subprocess.run(
             ["powershell.exe", "-Command", ps_cmd],
             capture_output=True, timeout=60
         )
+
+        # 4. 清理临时文件
+        try:
+            os.remove(win_dest)
+        except Exception:
+            pass
+
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace")[:200]
+            raise RuntimeError(f"PowerShell 播放失败: {stderr}")
 
     def _record_audio(self, output_path: str) -> bool:
         """录制音频，自动选择可用方案"""
@@ -322,25 +361,64 @@ class LocalClient:
 
     def _play_audio(self, audio_path: str):
         """播放音频，自动选择可用方案"""
-        if PYAUDIO_AVAILABLE:
-            try:
-                self._play_audio_pyaudio(audio_path)
-                return
-            except Exception as e:
-                print(f"PyAudio 播放失败: {e}，尝试 ffmpeg 方案")
+        # 确保是真正的 WAV 格式
+        wav_path = self._ensure_wav_format(audio_path)
 
-        # 尝试 ffmpeg 播放
+        # 优先使用 PowerShell SoundPlayer（最可靠）
+        try:
+            self._play_audio_powershell(wav_path)
+            return
+        except Exception as e:
+            print(f"  [调试] PowerShell 播放失败: {e}")
+
+        # 备选：ffmpeg 播放
         if self._check_ffmpeg():
             try:
-                self._play_audio_ffmpeg(audio_path)
+                self._play_audio_ffmpeg(wav_path)
                 return
             except Exception as e:
-                print(f"ffmpeg 播放失败: {e}，尝试 PowerShell 方案")
+                print(f"  [调试] ffmpeg 播放失败: {e}")
+
+        # 最后尝试 PyAudio
+        if PYAUDIO_AVAILABLE:
+            try:
+                self._play_audio_pyaudio(wav_path)
+                return
+            except Exception as e:
+                print(f"  [调试] PyAudio 播放失败: {e}")
+
+        print("  ⚠️ 所有播放方式都失败")
+
+    @staticmethod
+    def _ensure_wav_format(audio_path: str) -> str:
+        """确保音频是 WAV 格式（检查文件头，MP3 需要转换）"""
+        # 检查文件头：WAV 文件以 'RIFF' 开头，MP3 以 'ID3' 或 0xFF 开头
+        try:
+            with open(audio_path, 'rb') as f:
+                header = f.read(4)
+            # 已经是 WAV 格式
+            if header[:4] == b'RIFF':
+                return audio_path
+        except Exception:
+            pass
+
+        # 需要转换格式
+        wav_path = audio_path.rsplit('.', 1)[0] + '_converted.wav'
+        if os.path.exists(wav_path):
+            return wav_path
 
         try:
-            self._play_audio_powershell(audio_path)
-        except Exception as e:
-            print(f"音频播放失败: {e}")
+            subprocess.run(
+                ['ffmpeg', '-y', '-i', audio_path, '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', wav_path],
+                capture_output=True, timeout=15
+            )
+            if os.path.exists(wav_path):
+                return wav_path
+        except Exception:
+            pass
+
+        # 转换失败，返回原始路径
+        return audio_path
 
     def _play_audio_ffmpeg(self, audio_path: str):
         """使用 ffmpeg 播放音频"""
@@ -418,7 +496,10 @@ class LocalClient:
         print("💬 命令行对话模式")
         print("=" * 50)
         print("输入你的问题，输入 'quit' 或 'exit' 退出")
-        print("输入 'voice' 切换到语音模式（如果可用）\n")
+        print("输入 'voice' 切换到语音模式（如果可用）")
+        print("输入 'tts' 开启/关闭语音回复\n")
+
+        tts_enabled = True  # 默认开启语音回复
 
         while True:
             try:
@@ -431,12 +512,41 @@ class LocalClient:
                     await self.voice_mode()
                     continue
 
+                if query.lower() == "tts":
+                    tts_enabled = not tts_enabled
+                    status = "开启" if tts_enabled else "关闭"
+                    print(f"语音回复已{status}")
+                    continue
+
                 if not query:
                     continue
 
                 print("🤖 思考中...")
                 response = await self.llm_client.process_query(query)
                 print(f"\n小智: {response}")
+
+                # TTS 语音回复
+                if tts_enabled:
+                    try:
+                        import tempfile
+                        tts_path = os.path.join(tempfile.gettempdir(), f"cli_tts_{int(time.time())}.wav")
+                        print("  🔊 正在合成语音...")
+                        await self.tts.text_to_speech(response, tts_path)
+                        print(f"  🔊 语音文件: {os.path.getsize(tts_path)} bytes")
+                        print("  🔊 正在播放...")
+                        self._play_audio(tts_path)
+                        print("  🔊 播放完成")
+                        try:
+                            os.remove(tts_path)
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        error_msg = str(e)
+                        if '503' in error_msg:
+                            print("  ⚠️ 语音合成服务暂时不可用")
+                            print("    请稍后重试")
+                        else:
+                            print(f"  ⚠️ 语音播放失败: {error_msg[:150]}")
 
             except KeyboardInterrupt:
                 print("\n\n退出命令行模式")
