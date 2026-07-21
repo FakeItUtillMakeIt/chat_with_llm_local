@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from llm_mcp import LLM_MCP
 from tools.audio_to_text import AudioToText
-from tools.offlineTTS import OfflineTTS
+from tools.chatTTS import ChatTTS
 
 # 尝试导入音频相关库
 try:
@@ -43,7 +43,7 @@ class LocalClient:
     def __init__(self, config_path: str = "mcp_config.json", system_prompt: str = None):
         self.llm_client = LLM_MCP(config_path=config_path, system_prompt=system_prompt)
         self.asr = AudioToText()
-        self.tts = OfflineTTS({"rate": 0, "volume": 100})
+        self.tts = ChatTTS({"temperature": 0.3, "top_p": 0.7, "top_k": 20})
 
         # 音频参数
         self.sample_rate = 16000
