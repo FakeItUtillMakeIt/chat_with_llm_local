@@ -1,0 +1,41 @@
+# 基础依赖
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# LLM API
+openai>=1.0.0
+python-dotenv>=1.0.0
+
+# MCP 协议
+mcp>=1.17.0
+
+# 语音识别
+funasr>=1.2.0
+modelscope>=1.20.0
+transformers>=5.0.0
+torch-complex>=0.4.0
+
+# 语音合成 (ChatTTS)
+ChatTTS>=0.2.0
+vector-quantize-pytorch>=1.10.0
+vocos>=0.1.0
+einops>=0.6.0
+encodec>=0.1.1
+
+# 企业微信
+Flask>=3.0.0
+requests>=2.28.0
+pycryptodome>=3.19.0
+
+# 音频处理
+pydub>=0.25.1
+webrtcvad>=2.0.10
+
+# 其他
+pyserial>=3.5
+keyboard>=0.13.5
+pynput>=1.7.6
+websockets>=11.0.3
+pyaudio>=0.2.11
