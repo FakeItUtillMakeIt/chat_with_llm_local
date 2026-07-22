@@ -22,7 +22,6 @@ chat_with_llm_local/
 │   ├── local_client.py         # 本地交互入口（语音/命令行）
 │   ├── mcp_config.json         # MCP 服务器配置
 │   ├── system_prompt.md        # LLM 系统提示词
-│   ├── requirements.txt        # Python 依赖
 │   ├── .env.example            # 环境变量模板
 │   ├── mcp-server/
 │   │   ├── text-editor/        # 文本编辑器 MCP 工具
@@ -38,9 +37,11 @@ chat_with_llm_local/
 │   ├── run-serveo.sh           # serveo 内网穿透
 │   └── test-wecom-callback.sh  # 回调 URL 测试
 ├── models/                     # ASR 模型文件
-│   └── SenseVoiceSmall/        # SenseVoice 语音识别模型
+│   └── SenseVoiceSmall/        # SenseVoice 语音识别模型（huggingface下载）#https://huggingface.co/FunAudioLLM/SenseVoiceSmall #https://github.com/FunAudioLLM/SenseVoice
 ├── asset/                      # ChatTTS 模型文件（自动下载）
 └── 企业微信接入指南.md           # 企业微信配置文档
+│── requirements.txt        # Python 依赖
+├── README.md
 ```
 
 ## 快速开始
